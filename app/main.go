@@ -17,7 +17,7 @@ func createHeaderSection(buf []byte) (header.Header, error) {
 	err := binary.Read(buffer, binary.BigEndian, &ID)
 	headerObj := header.Header{
 		ID:      ID,
-		QR:      1,
+		QR:      1<<7,
 		OPCODE:  0,
 		AA:      0,
 		TC:      0,
@@ -68,13 +68,13 @@ func main() {
 			fmt.Println("Error receiving data:", err)
 			break
 		}
-		buf := new(bytes.Buffer)
-		err = binary.Write(buf, binary.BigEndian, headerObj)
+		binaryBuf := new(bytes.Buffer)
+		err = binary.Write(binaryBuf, binary.BigEndian, headerObj)
 		if err != nil {
 			fmt.Printf("binary.Write failed: %v", err)
-			return
+			break
 		}
-		data := buf.Bytes()
+		data := binaryBuf.Bytes()
 
 		response := data
 
