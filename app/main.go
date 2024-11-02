@@ -10,78 +10,52 @@ import (
 	"net"
 )
 
-var _ = net.ListenUDP
-
 // |  Bit  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0  |
 // |-------|-----|-----|-----|-----|-----|-----|-----|-----|
 // | Value |  0  |  0  |  0  |  0  | Opcode  |  AA  |  TC  |  RD  |
 
-func createHeaderSection(buf []byte) ([]byte, error) {
+func createHeaderSection(buf []byte, ANCount uint16) ([]byte, error) {
 	buffer := bytes.NewReader(buf[:2])
-	var ID, QDCOUNT, ANCOUNT, OPCODE, RD, RCODE uint16
+	var ID, QDCOUNT uint16
 
 	idErr := binary.Read(buffer, binary.BigEndian, &ID)
 	if idErr != nil {
-		fmt.Println("Error reading ID:", idErr)
 		return nil, idErr
 	}
 
-	flags := buf[2]
-
-	// Extract OPCODE (bits 3-6)
-	OPCODE = uint16((flags >> 3) & 0b00001111)
-
-	// Extract RD (bit 0)
-	RD = uint16(flags & 0b00000001)
-
-	// Set QDCOUNT and ANCOUNT
-	qdBuffer := bytes.NewBuffer(buf[4:6])
-	qdErr := binary.Read(qdBuffer, binary.BigEndian, &QDCOUNT)
-	if qdErr != nil {
-		fmt.Println("Error reading QDCOUNT:", qdErr)
-		return nil, qdErr
-	}
-	ANCOUNT = QDCOUNT
-	// Set RCODE based on OPCODE
-	if OPCODE == 0 {
-		RCODE = 0
-	} else {
-		RCODE = 4
-	}
+	QDCOUNT = binary.BigEndian.Uint16(buf[4:6])
 
 	headerObj := header.Header{
 		ID:      ID,
-		QR:      1,
-		OPCODE:  OPCODE,
-		AA:      0,
-		TC:      0,
-		RD:      RD,
-		RA:      0,
-		Z:       0,
-		RCODE:   RCODE,
-		QDCOUNT: QDCOUNT,
-		ANCOUNT: ANCOUNT,
+		QR:      1,       // Set to 1 for a response
+		OPCODE:  0,       // Standard query
+		AA:      0,       // Not authoritative
+		TC:      0,       // Message not truncated
+		RD:      1,       // Recursion desired
+		RA:      0,       // Recursion not available
+		Z:       0,       // Reserved
+		RCODE:   0,       // No error
+		QDCOUNT: QDCOUNT, // Number of questions
+		ANCOUNT: ANCount, // Number of answers
 		NSCOUNT: 0,
 		ARCOUNT: 0,
 	}
 
-	headerResponse := []byte{}
+	headerResponse := make([]byte, 0)
 
-	// ID bytes
+	// ID and Flags
 	idBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(idBytes, headerObj.ID)
 	headerResponse = append(headerResponse, idBytes...)
 
-	// Flags (2 bytes)
-	flagBytes := make([]byte, 2)
-	flagsValue := headerObj.QR<<15 | headerObj.OPCODE<<11 |
-		headerObj.AA<<10 | headerObj.TC<<9 |
-		headerObj.RD<<8 | headerObj.RA<<7 |
+	flags := headerObj.QR<<15 | headerObj.OPCODE<<11 | headerObj.AA<<10 |
+		headerObj.TC<<9 | headerObj.RD<<8 | headerObj.RA<<7 |
 		headerObj.Z<<4 | headerObj.RCODE
-	binary.BigEndian.PutUint16(flagBytes, flagsValue)
+	flagBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(flagBytes, flags)
 	headerResponse = append(headerResponse, flagBytes...)
 
-	// Counts (8 bytes: QDCOUNT, ANCOUNT, NSCOUNT, ARCOUNT)
+	// QDCOUNT, ANCOUNT, NSCOUNT, ARCOUNT
 	countBytes := make([]byte, 8)
 	binary.BigEndian.PutUint16(countBytes[0:2], headerObj.QDCOUNT)
 	binary.BigEndian.PutUint16(countBytes[2:4], headerObj.ANCOUNT)
@@ -91,6 +65,7 @@ func createHeaderSection(buf []byte) ([]byte, error) {
 
 	return headerResponse, nil
 }
+
 func createLabel(off int, buf []byte) []byte {
 	domainName := buf[off:]
 	offset := 0
@@ -102,7 +77,7 @@ func createLabel(off int, buf []byte) []byte {
 		// Check if the label contains a pointer
 		if (length & 0b11000000) == 0b11000000 {
 			pointerOffset := int(domainName[offset]&0b00111111)<<8 | int(domainName[offset+1])
-			createLabel(pointerOffset, buf)
+			Name = append(Name, createLabel(pointerOffset, buf)...)
 			break
 		}
 
@@ -120,25 +95,18 @@ func createLabel(off int, buf []byte) []byte {
 }
 
 func createQuestionSection(buf []byte) []byte {
-
-	// Initialize type and class buffers
-	Name := createLabel(12, buf)
+	name := createLabel(0, buf)
 	typeBuff := make([]byte, 2)
 	classBuff := make([]byte, 2)
 
-	// Set the record type to 1 (A record) and class to 1 (IN - Internet)
-	var Type, Class uint16
-	Type = 1
-	binary.BigEndian.PutUint16(typeBuff, Type)
-	Class = 1
-	binary.BigEndian.PutUint16(classBuff, Class)
+	binary.BigEndian.PutUint16(typeBuff, 1)
+	binary.BigEndian.PutUint16(classBuff, 1)
 
 	questionObj := question.Question{
-		Name:  Name,
+		Name:  name,
 		Type:  typeBuff,
 		Class: classBuff,
 	}
-
 	questionResponse := []byte{}
 	questionResponse = append(questionResponse, questionObj.Name...)
 	questionResponse = append(questionResponse, questionObj.Type...)
@@ -147,50 +115,42 @@ func createQuestionSection(buf []byte) []byte {
 	return questionResponse
 }
 
-func createAnswerSection(buf []byte) ([]byte, error) {
-	answerResponse := []byte{}
+func createAnswerSection(buf []byte, answerCount int) ([]byte, error) {
+	answerResponse := make([]byte, 0)
 
-	// Initialize buffers for each field in the answer section
-	typeBuff := make([]byte, 2)
-	Name := createLabel(12, buf)
-	classBuff := make([]byte, 2)
-	ttlBuff := make([]byte, 4)
-	lengthBuff := make([]byte, 2)
+	for i := 0; i < answerCount; i++ {
+		name := createLabel(0, buf)
 
-	var Type, Class, Length uint16
-	Type = 1
-	binary.BigEndian.PutUint16(typeBuff, Type)
-	Class = 1
-	binary.BigEndian.PutUint16(classBuff, Class)
-	var TTL uint32 = 60
-	binary.BigEndian.PutUint32(ttlBuff, TTL)
-	Length = 4
-	binary.BigEndian.PutUint16(lengthBuff, Length)
+		typeBuff := make([]byte, 2)
+		binary.BigEndian.PutUint16(typeBuff, 1)
 
-	ipAddress := net.ParseIP("8.8.8.8").To4()
-	dataBuff := new(bytes.Buffer)
-	err := binary.Write(dataBuff, binary.BigEndian, ipAddress)
-	if err != nil {
-		fmt.Println("error encoding data")
-		return answerResponse, err
+		classBuff := make([]byte, 2)
+		binary.BigEndian.PutUint16(classBuff, 1)
+
+		ttlBuff := make([]byte, 4)
+		binary.BigEndian.PutUint32(ttlBuff, 60)
+
+		lengthBuff := make([]byte, 2)
+		binary.BigEndian.PutUint16(lengthBuff, 4)
+
+		ipAddress := net.ParseIP("8.8.8.8").To4()
+
+		answerObj := answer.Answer{
+			Name:   name,
+			Type:   typeBuff,
+			Class:  classBuff,
+			TTL:    ttlBuff,
+			Length: lengthBuff,
+			Data:   ipAddress,
+		}
+
+		answerResponse = append(answerResponse, answerObj.Name...)
+		answerResponse = append(answerResponse, answerObj.Type...)
+		answerResponse = append(answerResponse, answerObj.Class...)
+		answerResponse = append(answerResponse, answerObj.TTL...)
+		answerResponse = append(answerResponse, answerObj.Length...)
+		answerResponse = append(answerResponse, answerObj.Data...)
 	}
-	Data := dataBuff.Bytes()
-
-	answerObj := answer.Answer{
-		Name:   Name,
-		Type:   typeBuff,
-		Class:  classBuff,
-		TTL:    ttlBuff,
-		Length: lengthBuff,
-		Data:   Data,
-	}
-
-	answerResponse = append(answerResponse, answerObj.Name...)
-	answerResponse = append(answerResponse, answerObj.Type...)
-	answerResponse = append(answerResponse, answerObj.Class...)
-	answerResponse = append(answerResponse, answerObj.TTL...)
-	answerResponse = append(answerResponse, answerObj.Length...)
-	answerResponse = append(answerResponse, answerObj.Data...)
 
 	return answerResponse, nil
 }
@@ -214,27 +174,35 @@ func main() {
 	buf := make([]byte, 512)
 
 	for {
-		size, source, err := udpConn.ReadFromUDP(buf)
+		_, source, err := udpConn.ReadFromUDP(buf)
 		if err != nil {
 			fmt.Println("Error receiving data:", err)
 			break
 		}
-		fmt.Printf("Received %d bytes from %s\n", size, source)
 
-		headerResponse, err := createHeaderSection(buf)
+		qdcount := binary.BigEndian.Uint16(buf[4:6])
+
+		headerResponse, err := createHeaderSection(buf, qdcount)
 		if err != nil {
 			fmt.Println("Error creating header:", err)
 			break
 		}
-		questionResponse := createQuestionSection(buf)
-		answerResponse, err := createAnswerSection(buf)
-		if err != nil {
-			fmt.Println("Error creating answerResponse:", err)
-			break
-		}
+
 		response := make([]byte, 0)
 		response = append(response, headerResponse...)
-		response = append(response, questionResponse...)
+
+		var currentPos uint16 = 12
+		for i := uint16(0); i < qdcount; i++ {
+			questionResponse := createQuestionSection(buf[currentPos:])
+			response = append(response, questionResponse...)
+			currentPos += uint16(len(questionResponse))
+		}
+
+		answerResponse, err := createAnswerSection(buf[12:], int(qdcount))
+		if err != nil {
+			fmt.Println("Error creating answer:", err)
+			break
+		}
 		response = append(response, answerResponse...)
 
 		_, err = udpConn.WriteToUDP(response, source)
