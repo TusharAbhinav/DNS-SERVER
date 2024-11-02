@@ -41,12 +41,7 @@ func createHeaderSection(buf []byte) ([]byte, error) {
 		fmt.Println("Error reading QDCOUNT:", qdErr)
 		return nil, qdErr
 	}
-	anBuffer:=bytes.NewBuffer(buf[6:8])
-	anErr:=binary.Read(anBuffer,binary.BigEndian,&ANCOUNT)
-	if anErr != nil {
-		fmt.Println("Error reading ANCOUNT:", anErr)
-		return nil, anErr
-	}
+	ANCOUNT = QDCOUNT
 	// Set RCODE based on OPCODE
 	if OPCODE == 0 {
 		RCODE = 0
@@ -96,7 +91,7 @@ func createHeaderSection(buf []byte) ([]byte, error) {
 
 	return headerResponse, nil
 }
-func createLabel(off uint16, buf []byte) []byte {
+func createLabel(off int, buf []byte) []byte {
 	domainName := buf[off:]
 	offset := 0
 	var Name []byte
@@ -106,7 +101,7 @@ func createLabel(off uint16, buf []byte) []byte {
 
 		// Check if the label contains a pointer
 		if (length & 0b11000000) == 0b11000000 {
-			pointerOffset := uint16(domainName[offset]&0b00111111)<<8 | uint16(domainName[offset+1])
+			pointerOffset := int(domainName[offset]&0b00111111)<<8 | int(domainName[offset+1])
 			createLabel(pointerOffset, buf)
 			break
 		}
