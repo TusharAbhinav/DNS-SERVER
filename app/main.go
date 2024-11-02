@@ -35,9 +35,18 @@ func createHeaderSection(buf []byte) ([]byte, error) {
 	RD = uint16(flags & 0b00000001)
 
 	// Set QDCOUNT and ANCOUNT
-	QDCOUNT = 1
-	ANCOUNT = 1
-
+	qdBuffer := bytes.NewBuffer(buf[4:6])
+	qdErr := binary.Read(qdBuffer, binary.BigEndian, &QDCOUNT)
+	if qdErr != nil {
+		fmt.Println("Error reading QDCOUNT:", qdErr)
+		return nil, qdErr
+	}
+	anBuffer:=bytes.NewBuffer(buf[6:8])
+	anErr:=binary.Read(anBuffer,binary.BigEndian,&ANCOUNT)
+	if anErr != nil {
+		fmt.Println("Error reading ANCOUNT:", anErr)
+		return nil, anErr
+	}
 	// Set RCODE based on OPCODE
 	if OPCODE == 0 {
 		RCODE = 0
