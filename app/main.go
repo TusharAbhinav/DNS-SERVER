@@ -14,48 +14,67 @@ import (
 // |-------|-----|-----|-----|-----|-----|-----|-----|-----|
 // | Value |  0  |  0  |  0  |  0  | Opcode  |  AA  |  TC  |  RD  |
 
-func createHeaderSection(buf []byte, ANCount uint16) ([]byte, error) {
+func createHeaderSection(buf []byte) ([]byte, error) {
 	buffer := bytes.NewReader(buf[:2])
-	var ID, QDCOUNT uint16
+	var ID, QDCOUNT, ANCOUNT, OPCODE, RD, RCODE uint16
 
 	idErr := binary.Read(buffer, binary.BigEndian, &ID)
 	if idErr != nil {
+		fmt.Println("Error reading ID:", idErr)
 		return nil, idErr
 	}
 
+	flags := buf[2]
+
+	// Extract OPCODE (bits 3-6)
+	OPCODE = uint16((flags >> 3) & 0b00001111)
+
+	// Extract RD (bit 0)
+	RD = uint16(flags & 0b00000001)
+
+	// Set QDCOUNT and ANCOUNT
 	QDCOUNT = binary.BigEndian.Uint16(buf[4:6])
+	ANCOUNT = QDCOUNT
+	// Set RCODE based on OPCODE
+	if OPCODE == 0 {
+		RCODE = 0
+	} else {
+		RCODE = 4
+	}
 
 	headerObj := header.Header{
 		ID:      ID,
-		QR:      1,       // Set to 1 for a response
-		OPCODE:  0,       // Standard query
-		AA:      0,       // Not authoritative
-		TC:      0,       // Message not truncated
-		RD:      1,       // Recursion desired
-		RA:      0,       // Recursion not available
-		Z:       0,       // Reserved
-		RCODE:   0,       // No error
-		QDCOUNT: QDCOUNT, // Number of questions
-		ANCOUNT: ANCount, // Number of answers
+		QR:      1,
+		OPCODE:  OPCODE,
+		AA:      0,
+		TC:      0,
+		RD:      RD,
+		RA:      0,
+		Z:       0,
+		RCODE:   RCODE,
+		QDCOUNT: QDCOUNT,
+		ANCOUNT: ANCOUNT,
 		NSCOUNT: 0,
 		ARCOUNT: 0,
 	}
 
-	headerResponse := make([]byte, 0)
+	headerResponse := []byte{}
 
-	// ID and Flags
+	// ID bytes
 	idBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(idBytes, headerObj.ID)
 	headerResponse = append(headerResponse, idBytes...)
 
-	flags := headerObj.QR<<15 | headerObj.OPCODE<<11 | headerObj.AA<<10 |
-		headerObj.TC<<9 | headerObj.RD<<8 | headerObj.RA<<7 |
-		headerObj.Z<<4 | headerObj.RCODE
+	// Flags (2 bytes)
 	flagBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(flagBytes, flags)
+	flagsValue := headerObj.QR<<15 | headerObj.OPCODE<<11 |
+		headerObj.AA<<10 | headerObj.TC<<9 |
+		headerObj.RD<<8 | headerObj.RA<<7 |
+		headerObj.Z<<4 | headerObj.RCODE
+	binary.BigEndian.PutUint16(flagBytes, flagsValue)
 	headerResponse = append(headerResponse, flagBytes...)
 
-	// QDCOUNT, ANCOUNT, NSCOUNT, ARCOUNT
+	// Counts (8 bytes: QDCOUNT, ANCOUNT, NSCOUNT, ARCOUNT)
 	countBytes := make([]byte, 8)
 	binary.BigEndian.PutUint16(countBytes[0:2], headerObj.QDCOUNT)
 	binary.BigEndian.PutUint16(countBytes[2:4], headerObj.ANCOUNT)
@@ -182,7 +201,7 @@ func main() {
 
 		qdcount := binary.BigEndian.Uint16(buf[4:6])
 
-		headerResponse, err := createHeaderSection(buf, qdcount)
+		headerResponse, err := createHeaderSection(buf)
 		if err != nil {
 			fmt.Println("Error creating header:", err)
 			break
