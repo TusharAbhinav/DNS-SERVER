@@ -1,36 +1,98 @@
+I'll update the README.md to better reflect the actual implementation and features shown in the code.
+
 [![progress-banner](https://backend.codecrafters.io/progress/dns-server/9ab05740-d833-4fb0-90dd-5328dc2f019c)](https://app.codecrafters.io/users/codecrafters-bot?r=2qF)
 
-This is a starting point for Go solutions to the
-["Build Your Own DNS server" Challenge](https://app.codecrafters.io/courses/dns-server/overview).
+# Build Your Own DNS Server
 
-In this challenge, you'll build a DNS server that's capable of parsing and
-creating DNS packets, responding to DNS queries, handling various record types
-and doing recursive resolve. Along the way we'll learn about the DNS protocol,
-DNS packet format, root servers, authoritative servers, forwarding servers,
-various record types (A, AAAA, CNAME, etc) and more.
+A DNS forwarding server implementation in Go that demonstrates the core concepts of the Domain Name System protocol. This server accepts DNS queries and forwards them to a specified upstream DNS resolver, handling the response back to the client.
 
-**Note**: If you're viewing this repo on GitHub, head over to
-[codecrafters.io](https://codecrafters.io) to try the challenge.
+## Features
 
-# Passing the first stage
+- DNS packet parsing and creation
+- Support for DNS message headers and questions sections
+- DNS query forwarding to upstream resolvers
+- UDP protocol handling
+- Configurable upstream DNS resolver
+- Support for handling multiple DNS questions in a single query
 
-The entry point for your `your_program.sh` implementation is in `app/main.go`.
-Study and uncomment the relevant code, and push your changes to pass the first
-stage:
+## Technical Details
 
-```sh
-git commit -am "pass 1st stage" # any msg
-git push origin master
+### DNS Message Format Handling
+
+The server handles the standard DNS message format:
+- Header Section (12 bytes)
+- Question Section
+- Answer Section
+
+#### Header Section Flags
+```
+|  Bit  |  7  |  6  |  5  |  4  |  3  |  2  |  1  |  0  |
+|-------|-----|-----|-----|-----|-----|-----|-----|-----|
+| Value |  0  |  0  |  0  |  0  | Opcode  |  AA  |  TC  |  RD  |
 ```
 
-Time to move on to the next stage!
+## Getting Started
 
-# Stage 2 & beyond
+### Prerequisites
 
-Note: This section is for stages 2 and beyond.
+- Go 1.19 or higher
+- Basic understanding of DNS and networking concepts
 
-1. Ensure you have `go (1.19)` installed locally
-1. Run `./your_program.sh` to run your program, which is implemented in
-   `app/main.go`.
-1. Commit your changes and run `git push origin master` to submit your solution
-   to CodeCrafters. Test output will be streamed to your terminal.
+### Installation
+
+1. Clone the repository:
+```bash
+git clone https://github.com/TusharAbhinav/DNS-SERVER.git
+cd dns-server
+```
+
+2. Run the server:
+```bash
+go run app/main.go --resolver <upstream-dns-ip:port>
+```
+
+Example:
+```bash
+go run app/main.go --resolver 8.8.8.8:53
+```
+
+The server listens on `127.0.0.1:2053` by default.
+
+## Implementation Details
+
+The DNS server implements the following key components:
+
+1. **Header Processing**: Creates and parses DNS header sections with proper flags and counts
+2. **Question Processing**: Handles DNS questions with domain name labels and types
+3. **DNS Forwarding**: Forwards queries to upstream resolver and processes responses
+4. **Label Compression**: Supports DNS name compression in both questions and answers
+5. **UDP Communication**: Manages UDP connections for both client and upstream resolver communication
+
+## Project Structure
+
+```
+├── app/
+│   ├── main.go                    # Main server implementation
+│   └── sections/                  # DNS message sections
+│       ├── header/                # Header section structure
+│       └── question/              # Question section structure
+        └── answer/                # Answer section structure
+```
+
+## Dependencies
+
+- Standard Go libraries for networking and binary encoding
+- Custom DNS message section handlers for header and question processing
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Acknowledgments
+
+- RFC 1034 & 1035 for DNS protocol specifications
+- The Go community for excellent networking libraries
