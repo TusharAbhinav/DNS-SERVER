@@ -67,6 +67,20 @@ The DNS server implements the following key components:
 4. **Label Compression**: Supports DNS name compression in both questions and answers
 5. **UDP Communication**: Manages UDP connections for both client and upstream resolver communication
 
+## Assumptions About the Tester And Resolver 
+Here are a few assumptions you can make about the tester :
+
+1. **It will always send you queries for A record type. So your parsing logic only needs to take care of this**.
+
+Here are few assumptions you can make about the DNS server you are forwarding the requests to :
+
+1. **It will always respond with an answer section for the queries that originate from the tester.**
+
+2. **It will not contain other sections like (authority section and additional section)**
+
+3. **It will only respond when there is only one question in the question section. If you send multiple questions in the question section, it will not respond at all. So when you receive multiple questions in 
+     the 4.question section you will need to split it into two DNS packets and then send them to this resolver then merge the response in a single packet.**
+
 ## Project Structure
 
 ```
